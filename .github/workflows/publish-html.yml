@@ -1,25 +1,24 @@
-name: Publish HTML pages
-run-name: "HTML 배포 · ${{ inputs.page || '전체 페이지' }}"
+name: Publish HTML page
+run-name: "Publish ${{ inputs.input_path || inputs.html_file }}"
 
 on:
-  push:
-    paths:
-      - 'public/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - '.github/workflows/publish-html.yml'
   workflow_dispatch:
     inputs:
-      page:
-        description: '결과 화면 맨 위에 표시할 HTML (전체 페이지는 함께 유지됩니다)'
+      html_file:
+        description: '게시할 HTML 선택'
         required: true
         type: choice
-        default: '전체 페이지'
+        default: 'public/test1.html'
         options:
           # BEGIN HTML CHOICES
-          - "전체 페이지"
-          - "test1.html"
+          - "직접 경로 입력"
+          - "public/test1.html"
+          - "public/test2.html"
           # END HTML CHOICES
+      input_path:
+        description: '목록에 없는 HTML 경로 (예: public/new.html, 입력하면 선택값보다 우선)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -29,31 +28,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      page_url: ${{ steps.publish.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify page builder
+      - uses: actions/checkout@v4
+        with:
+          ref: published-pages
+          path: _published
+      - name: Verify publisher
         run: python3 -m unittest discover -s tests -v
-      - uses: actions/configure-pages@v5
-      - name: Build all saved pages
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Publish selected HTML
+        id: publish
         env:
-          SELECTED_PAGE: ${{ inputs.page }}
-        run: python3 scripts/build_pages.py build
+          HTML_FILE: ${{ inputs.html_file }}
+          INPUT_PATH: ${{ inputs.input_path }}
+          PAGE_URL: ${{ steps.pages.outputs.base_url }}
+        run: python3 scripts/publish_selected.py
+      - name: Retain published pages
+        working-directory: _published
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add site registry.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish selected HTML (run $GITHUB_RUN_ID)"
+            git push origin HEAD:published-pages
+          fi
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: _site
+          path: _published/site
       - uses: actions/upload-artifact@v4
         with:
-          name: page-metadata
-          path: page-metadata/pages.json
+          name: selected-page
+          path: page-result/result.json
           retention-days: 7
 
   deploy:
-    needs: build
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,32 +83,20 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ needs.publish.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: page-metadata
-          path: page-metadata
+          name: selected-page
+          path: page-result
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-      - name: Show selected page and all links
+      - name: 이용자에게 전달할 결과 링크
         env:
-          SELECTED_PAGE: ${{ inputs.page }}
+          WRITE_SUMMARY: 'true'
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        run: python3 scripts/build_pages.py summary
-
-  sync-menu:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Refresh Run workflow choices
-        env:
-          MENU_SYNC_TOKEN: ${{ secrets.MENU_SYNC_TOKEN }}
-        run: python3 scripts/sync_choices.py --remote
+        run: python3 scripts/publish_selected.py

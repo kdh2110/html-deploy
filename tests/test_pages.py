@@ -4,89 +4,96 @@ import sys
 import tempfile
 import unittest
 from urllib.parse import urljoin
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from build_pages import ALL_PAGES, HeadParser, build, clean_copy, summary
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from build_pages import DIRECT_PATH, NOTICE, HeadParser, clean_copy
+from publish_selected import publish, select_path, summary, result_url
 from sync_choices import render, START, END
 
+class SelectedPageTests(unittest.TestCase):
+    def setup_dirs(self,tmp):
+        src=Path(tmp)/'public';archive=Path(tmp)/'archive'
+        src.mkdir();(archive/'site').mkdir(parents=True)
+        (archive/'site/index.html').write_text(NOTICE)
+        (archive/'registry.json').write_text('{}')
+        return src,archive
 
-class PagesTests(unittest.TestCase):
-    def test_addition_preserves_originals_and_generates_clean_links(self):
+    def test_only_selected_published_and_other_page_snapshot_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
-            src, out = Path(tmp)/'public', Path(tmp)/'_site'
-            src.mkdir()
-            old = '<!doctype html><html><head><title>A</title></head><body>A</body></html>'
-            (src/'a.html').write_text(old)
-            build(src, out)
-            (src/'새 문서.html').write_text('<h1>B</h1>')
-            (src/'data.json').write_text('{"value":3}')
-            pages = build(src, out, 'a.html')
-            self.assertEqual((out/'a.html').read_text(), old)
-            self.assertEqual((out/'data.json').read_text(), '{"value":3}')
-            self.assertTrue((out/'a/index.html').exists())
-            self.assertTrue((out/'새 문서/index.html').exists())
-            self.assertNotIn('<a ', (out/'index.html').read_text())
-            self.assertFalse((out/'pages.json').exists())
-            report = summary(pages, 'https://example.org/repo/', 'a.html')
-            self.assertIn('[a](https://example.org/repo/a/)', report)
-            self.assertIn('/%EC%83%88%20%EB%AC%B8%EC%84%9C/', report)
-            self.assertIn('### 선택한 페이지', report)
+            src,archive=self.setup_dirs(tmp)
+            (src/'a.html').write_text('<h1>A</h1>')
+            (src/'b.html').write_text('<h1>B</h1>')
+            (src/'data.json').write_text('old assets')
+            result=publish(src,archive,Path('a.html'))
+            self.assertFalse((archive/'site/b').exists())
+            self.assertFalse(any(p.name=='b.html' for p in (archive/'site').rglob('*')))
+            a_page=(archive/'site/a/index.html').read_bytes()
+            a_assets={p.as_posix():p.read_bytes() for p in (archive/'site/_page-assets').rglob('*') if p.is_file()}
+            (src/'a.html').write_text('UNPUBLISHED CHANGE')
+            (src/'data.json').write_text('new assets')
+            publish(src,archive,Path('b.html'))
+            self.assertEqual((archive/'site/a/index.html').read_bytes(),a_page)
+            for path,content in a_assets.items(): self.assertEqual(Path(path).read_bytes(),content)
+            self.assertTrue((archive/'site/b/index.html').exists())
+            self.assertEqual((archive/'site/index.html').read_text(),NOTICE)
+            report=summary(result,'https://example.org/repo/')
+            self.assertEqual(report,'## 이용자에게 전달할 결과 링크\n\nhttps://example.org/repo/a/\n')
+            self.assertNotIn('/b/',report)
 
-    def test_relative_assets_resolve_to_original_directory(self):
-        text = '<!doctype html><html><head></head><body><img src="image.png"></body></html>'
-        page = clean_copy(text, 'a.html')
-        base = HeadParser(page).base
-        document_base = urljoin('https://example.org/repo/nested/a/', base)
-        self.assertEqual(urljoin(document_base, 'data.json'), 'https://example.org/repo/nested/data.json')
-        existing = clean_copy('<head><base href="assets/"></head>', 'a.html')
-        document_base = urljoin('https://example.org/repo/a/', HeadParser(existing).base)
-        self.assertEqual(urljoin(document_base, 'x.css'), 'https://example.org/repo/assets/x.css')
-
-    def test_script_and_comment_head_text_is_not_modified(self):
-        html = '<!-- <head> --><html><head><script>const s="<head>";</script></head></html>'
-        result = clean_copy(html, 'test.html')
-        self.assertIn('<html><head><base href="../test.html">', result)
-        self.assertIn('const s="<head>"', result)
-
-    def test_existing_index_preserved_and_collision_rejected(self):
+    def test_republish_updates_only_selected_and_preserves_legacy_url(self):
         with tempfile.TemporaryDirectory() as tmp:
-            src, out = Path(tmp)/'public', Path(tmp)/'_site'
-            (src/'a').mkdir(parents=True)
-            (src/'index.html').write_text('home')
-            (src/'a/index.html').write_text('existing')
-            pages = build(src, out)
-            self.assertEqual((out/'index.html').read_text(), 'home')
-            self.assertEqual({p['route'] for p in pages}, {'', 'a/'})
-            (src/'a.html').write_text('collision')
-            with self.assertRaisesRegex(ValueError, '주소 충돌'):
-                build(src, out)
-            self.assertEqual((out/'a/index.html').read_text(), 'existing')
+            src,archive=self.setup_dirs(tmp)
+            (archive/'site/a.html').write_text('legacy')
+            (src/'a.html').write_text('<h1>first</h1>')
+            publish(src,archive,Path('a.html'))
+            (src/'a.html').write_text('<h1>second</h1>')
+            publish(src,archive,Path('a.html'))
+            self.assertIn('second',(archive/'site/a/index.html').read_text())
+            self.assertIn('second',(archive/'site/a.html').read_text())
+            self.assertEqual(len(json.loads((archive/'registry.json').read_text())),1)
 
-    def test_missing_selection_and_symlinks_rejected(self):
+    def test_nested_unicode_assets_resolve_in_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
-            src, out = Path(tmp)/'public', Path(tmp)/'_site'; src.mkdir()
-            (src/'a.html').write_text('a')
-            with self.assertRaisesRegex(ValueError, '선택한 파일'):
-                build(src, out, 'missing.html')
+            src,archive=self.setup_dirs(tmp)
+            (src/'분야').mkdir();(src/'분야/보고서.html').write_text('<head></head><h1>한글</h1>')
+            (src/'data.json').write_text('{}')
+            result=publish(src,archive,Path('분야/보고서.html'))
+            url=result_url(result,'https://example.org/repo/')
+            self.assertNotIn('.html',url)
+            base=HeadParser((archive/'site/분야/보고서/index.html').read_text()).base
+            asset_url=urljoin(urljoin(url,base),'../data.json')
+            self.assertIn('/repo/_page-assets/',asset_url)
+            self.assertTrue(asset_url.endswith('/data.json'))
+
+    def test_paths_and_missing_files_rejected(self):
+        self.assertEqual(select_path('public/a.html','public/b.html'),Path('b.html'))
+        for path in ['../a.html','public/../a.html','/public/a.html','a.html','public/a.txt','public/a\n.html']:
+            with self.assertRaises(ValueError): select_path(path,'')
+        with self.assertRaises(ValueError):select_path(DIRECT_PATH,'')
+        with tempfile.TemporaryDirectory() as tmp:
+            src,archive=self.setup_dirs(tmp)
+            with self.assertRaises(ValueError):publish(src,archive,Path('missing.html'))
+
+    def test_collision_and_symlink_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src,archive=self.setup_dirs(tmp)
+            (src/'a.html').write_text('A');(src/'a.htm').write_text('B')
+            publish(src,archive,Path('a.html'))
+            with self.assertRaises(ValueError):publish(src,archive,Path('a.htm'))
             (src/'link.html').symlink_to(src/'a.html')
-            with self.assertRaisesRegex(ValueError, '심볼릭'):
-                build(src, out)
+            with self.assertRaises(ValueError):publish(src,archive,Path('link.html'))
 
-    def test_menu_refresh_add_delete_and_escaping(self):
-        template = 'prefix\n' + START + '          - "old.html"\n' + END + '\nsuffix\n'
-        paths = ['한글.html', 'a"b.html', 'x\ny.html']
-        result = render(template, paths)
-        self.assertNotIn('old.html', result)
-        choices = [json.loads(line.strip()[2:]) for line in result.splitlines() if line.strip().startswith('- ')]
-        self.assertEqual(choices, [ALL_PAGES] + sorted(paths, key=str.casefold))
-        self.assertEqual(render(result, paths), result)
-        self.assertTrue(result.endswith('\nsuffix\n'))
+    def test_menu_updates_paths_without_all_pages_option(self):
+        template='prefix\n'+START+'          - "old"\n'+END+'\nsuffix\n'
+        new=render(template,['a.html','한글.html'])
+        self.assertIn('public/a.html',new)
+        self.assertIn('직접 경로 입력',new)
+        self.assertNotIn('전체 페이지',new)
+        self.assertEqual(render(new,['a.html','한글.html']),new)
 
-    def test_summary_escapes_filename_markdown(self):
-        report = summary([{'file':'[x]|<b>.html','label':'[x]|<b>','route':'[x]|<b>/'}],
-                         'https://example.org/', ALL_PAGES)
-        self.assertNotIn('<b>', report)
-        self.assertIn('%5Bx%5D%7C%3Cb%3E/', report)
+    def test_existing_base_and_script_content_preserved(self):
+        text='<html><head><base href="assets/"><script>const x="<head>";</script></head></html>'
+        result=clean_copy(text,'a.html','../_page-assets/id/a.html')
+        self.assertEqual(HeadParser(result).base,'../_page-assets/id/assets/')
+        self.assertIn('const x="<head>"',result)
 
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__=='__main__':unittest.main()

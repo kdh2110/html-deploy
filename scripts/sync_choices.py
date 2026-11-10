@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from build_pages import ALL_PAGES, html_files
+from build_pages import DIRECT_PATH, html_files
 
 WORKFLOW = '.github/workflows/publish-html.yml'
 START = '          # BEGIN HTML CHOICES\n'
@@ -17,7 +17,7 @@ END = '          # END HTML CHOICES'
 def render(text, paths):
     if text.count(START) != 1 or text.count(END) != 1:
         raise ValueError('워크플로의 HTML CHOICES 표시를 확인하세요.')
-    choices = [ALL_PAGES] + sorted(set(paths), key=str.casefold)
+    choices = [DIRECT_PATH] + sorted({'public/' + p for p in paths}, key=str.casefold)
     lines = ''.join('          - ' + json.dumps(p, ensure_ascii=False) + '\n' for p in choices)
     before, tail = text.split(START)
     _, after = tail.split(END)
@@ -35,7 +35,7 @@ def remote():
     token = os.environ.get('MENU_SYNC_TOKEN', '')
     if not token:
         note('자동 메뉴 갱신은 아직 꺼져 있습니다. MENU_SYNC_TOKEN을 설정하면 새 HTML을 자동 반영합니다. '
-             '현재 메뉴는 사용할 수 있으며, 전체 목록은 배포 결과에 항상 표시됩니다. README의 설정 방법을 참고하세요.')
+             '목록에 없는 파일은 Publish HTML page의 input_path에 경로를 직접 입력하면 됩니다.')
         return
     repo = os.environ['GITHUB_REPOSITORY']
     def api(path, payload=None):
