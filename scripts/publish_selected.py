@@ -11,15 +11,17 @@ from build_pages import NOTICE, clean_copy
 
 def select_path(typed):
     selected = typed.strip()
-    if not selected or selected == 'public/':
+    if not selected or selected.rstrip('/') == 'public':
         raise ValueError('public/ 뒤에 파일명을 입력하세요. 예: public/test1.html')
     path = PurePosixPath(selected)
     if path.is_absolute() or '..' in path.parts or '\\' in selected or any(ord(c) < 32 for c in selected):
         raise ValueError('public/ 안의 상대 HTML 경로를 입력하세요.')
     if not path.parts or path.parts[0] != 'public' or len(path.parts) < 2:
         raise ValueError('경로는 public/으로 시작해야 합니다.')
+    if path.suffix == '':                      # 추가: public/test1 → public/test1.html
+        path = path.with_suffix('.html')
     if path.suffix.lower() not in {'.html', '.htm'}:
-        raise ValueError('HTML 파일만 선택할 수 있습니다.')
+        raise ValueError(f'HTML 파일만 선택할 수 있습니다. 입력값: {selected}')
     return Path(*path.parts[1:])
 
 
