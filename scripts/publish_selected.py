@@ -6,13 +6,13 @@ from pathlib import Path, PurePosixPath
 import posixpath
 import shutil
 from urllib.parse import quote
-from build_pages import DIRECT_PATH, NOTICE, clean_copy
+from build_pages import NOTICE, clean_copy
 
 
-def select_path(choice, typed):
-    selected = typed.strip() or choice.strip()
-    if not selected or selected == DIRECT_PATH:
-        raise ValueError('HTML을 선택하거나 public/test1.html처럼 경로를 입력하세요.')
+def select_path(typed):
+    selected = typed.strip()
+    if not selected or selected == 'public/':
+        raise ValueError('public/ 뒤에 파일명을 입력하세요. 예: public/test1.html')
     path = PurePosixPath(selected)
     if path.is_absolute() or '..' in path.parts or '\\' in selected or any(ord(c) < 32 for c in selected):
         raise ValueError('public/ 안의 상대 HTML 경로를 입력하세요.')
@@ -103,7 +103,7 @@ if __name__ == '__main__':
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
             f.write(summary(result, os.environ['PAGE_URL']))
     else:
-        rel=select_path(os.environ.get('HTML_FILE',''),os.environ.get('INPUT_PATH',''))
+        rel=select_path(os.environ.get('INPUT_PATH',''))
         result=publish(Path('public'),Path('_published'),rel)
         Path('page-result').mkdir(exist_ok=True)
         Path('page-result/result.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')

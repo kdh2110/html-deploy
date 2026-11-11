@@ -2,7 +2,7 @@
 
 ## 원하는 3단계
 
-1. **Actions → Publish HTML page → Run workflow**에서 `html_file` 드롭다운으로 HTML을 선택합니다. 아직 목록에 없는 파일은 `input_path`에 `public/new.html`처럼 입력합니다. 직접 입력한 경로가 우선입니다.
+1. **Actions → Publish HTML page → Run workflow**에서 `input_path`에 HTML 경로를 직접 입력합니다. 기본으로 `public/`이 적혀 있으므로 뒤에 파일명을 붙여 `public/test1.html`처럼 완성합니다.
 2. **Run workflow**를 누르면 선택한 HTML만 새로 게시하거나 갱신합니다. 이전에 게시한 다른 페이지는 보관된 내용 그대로 유지됩니다. HTML 업로드만으로는 게시되지 않습니다.
 3. 실행 결과의 **deploy 상자 링크** 또는 **deploy summary → 이용자에게 전달할 결과 링크**를 누릅니다. 이번에 선택한 파일의 링크 하나만 표시됩니다.
 
@@ -18,18 +18,15 @@
 
 공개 메인 페이지에는 목록이 없습니다. 각 실행 결과에도 그 실행의 링크 하나만 나옵니다. 저장소가 공개라면 저장소 및 Actions 실행 기록은 다른 사람도 볼 수 있습니다.
 
-## 드롭다운 목록 갱신
+## 경로 입력
 
-드롭다운에는 설정 파일에 등록된 파일들이 나옵니다. 목록에 없는 새 HTML도 `input_path`에 경로를 입력하면 바로 게시할 수 있으며, **게시에는 별도 개인 토큰이 필요하지 않습니다.**
+입력란은 하나이며 기본값은 `public/`입니다. 파일명과 확장자까지 입력하세요.
 
-목록 자체까지 자동 갱신하려면 한 번만 설정합니다.
+- `public/test1.html` → `/html-deploy/test1/`
+- `public/reports/example.html` → `/html-deploy/reports/example/`
 
-1. GitHub 계정 Settings → Developer settings → Personal access tokens → Fine-grained tokens에서 토큰을 발급합니다.
-2. 대상 저장소는 `html-deploy`만 선택하고 **Contents / Workflows: Read and write** 권한을 부여합니다.
-3. 저장소 Settings → Secrets and variables → Actions에 **MENU_SYNC_TOKEN**이라는 secret으로 저장합니다. 토큰을 코드나 채팅에 넣지 마세요.
-4. 이후 public/ 변경 시 **Refresh HTML menu**가 목록을 갱신합니다. 이 작업은 페이지를 게시하지 않습니다. 토큰 저장 후 기존 목록을 즉시 갱신하려면 해당 작업의 최신 실행에서 Re-run all jobs를 사용하세요.
-
-토큰 없이도 `.github/workflows/publish-html.yml`의 `BEGIN HTML CHOICES`와 `END HTML CHOICES` 사이에 `- "public/new.html"`을 추가하거나, 로컬에서 `python3 scripts/sync_choices.py` 실행 후 해당 YAML을 커밋하면 됩니다.
+`public/`만 입력하거나 없는 파일을 지정하면 오류 메시지를 표시하고 게시하지 않습니다.
+드롭다운 및 자동 목록 갱신 작업은 사용하지 않으며, 별도 개인 토큰 설정도 필요하지 않습니다.
 
 ## 사용 시 참고
 

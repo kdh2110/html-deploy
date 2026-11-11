@@ -5,9 +5,8 @@ import tempfile
 import unittest
 from urllib.parse import urljoin
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from build_pages import DIRECT_PATH, NOTICE, HeadParser, clean_copy
+from build_pages import NOTICE, HeadParser, clean_copy
 from publish_selected import publish, select_path, summary, result_url
-from sync_choices import render, START, END
 
 class SelectedPageTests(unittest.TestCase):
     def setup_dirs(self,tmp):
@@ -65,10 +64,9 @@ class SelectedPageTests(unittest.TestCase):
             self.assertTrue(asset_url.endswith('/data.json'))
 
     def test_paths_and_missing_files_rejected(self):
-        self.assertEqual(select_path('public/a.html','public/b.html'),Path('b.html'))
-        for path in ['../a.html','public/../a.html','/public/a.html','a.html','public/a.txt','public/a\n.html']:
-            with self.assertRaises(ValueError): select_path(path,'')
-        with self.assertRaises(ValueError):select_path(DIRECT_PATH,'')
+        self.assertEqual(select_path(' public/b.html '),Path('b.html'))
+        for path in ['', 'public/', '../a.html','public/../a.html','/public/a.html','a.html','public/a.txt','public/a\n.html']:
+            with self.assertRaises(ValueError): select_path(path)
         with tempfile.TemporaryDirectory() as tmp:
             src,archive=self.setup_dirs(tmp)
             with self.assertRaises(ValueError):publish(src,archive,Path('missing.html'))
@@ -81,14 +79,6 @@ class SelectedPageTests(unittest.TestCase):
             with self.assertRaises(ValueError):publish(src,archive,Path('a.htm'))
             (src/'link.html').symlink_to(src/'a.html')
             with self.assertRaises(ValueError):publish(src,archive,Path('link.html'))
-
-    def test_menu_updates_paths_without_all_pages_option(self):
-        template='prefix\n'+START+'          - "old"\n'+END+'\nsuffix\n'
-        new=render(template,['a.html','한글.html'])
-        self.assertIn('public/a.html',new)
-        self.assertIn('직접 경로 입력',new)
-        self.assertNotIn('전체 페이지',new)
-        self.assertEqual(render(new,['a.html','한글.html']),new)
 
     def test_existing_base_and_script_content_preserved(self):
         text='<html><head><base href="assets/"><script>const x="<head>";</script></head></html>'
